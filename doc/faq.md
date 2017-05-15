@@ -102,6 +102,64 @@
 
    Some applications use 64-bit unsigned/signed integers. And these integers cannot be converted into `double` without loss of precision. So the parsers detects whether a JSON number is convertible to different types of integers and/or `double`.
 
+8. How to clear-and-minimize a document or value?
+
+   Call one of the `SetXXX()` methods - they call destructor which deallocates DOM data:
+
+   ~~~~~~~~~~cpp
+   Document d;
+   ...
+   d.SetObject();  // clear and minimize
+   ~~~~~~~~~~
+
+   Alternatively, use equivalent of the [C++ swap with temporary idiom](https://en.wikibooks.org/wiki/More_C%2B%2B_Idioms/Clear-and-minimize):
+   ~~~~~~~~~~cpp
+   Value(kObjectType).Swap(d);
+   ~~~~~~~~~~
+   or equivalent, but sightly longer to type:
+   ~~~~~~~~~~cpp
+   d.Swap(Value(kObjectType).Move()); 
+   ~~~~~~~~~~
+
+9. How to insert a document node into another document?
+
+   Let's take the following two DOM trees represented as JSON documents:
+   ~~~~~~~~~~cpp
+   Document person;
+   person.Parse("{\"person\":{\"name\":{\"first\":\"Adam\",\"last\":\"Thomas\"}}}");
+   
+   Document address;
+   address.Parse("{\"address\":{\"city\":\"Moscow\",\"street\":\"Quiet\"}}");
+   ~~~~~~~~~~
+   Let's assume we want to merge them in such way that the whole `address` document becomes a node of the `person`:
+   ~~~~~~~~~~js
+   { "person": {
+      "name": { "first": "Adam", "last": "Thomas" },
+      "address": { "city": "Moscow", "street": "Quiet" }
+      }
+   }
+   ~~~~~~~~~~
+
+   The most important requirement to take care of document and value life-cycle as well as consistent memory managent using the right allocator during the value transfer.
+   
+   Simple yet most efficient way to achieve that is to modify the `address` definition above to initialize it with allocator of the `person` document, then we just add the root member of the value:
+   ~~~~~~~~~~cpp
+   Documnet address(person.GetAllocator());
+   ...
+   person["person"].AddMember("address", address["address"], person.GetAllocator());
+   ~~~~~~~~~~
+Alternatively, if we don't want to explicitly refer to the root value of `address` by name, we can refer to it via iterator:
+   ~~~~~~~~~~cpp
+   auto addressRoot = address.MemberBegin();
+   person["person"].AddMember(addressRoot->name, addressRoot->value, person.GetAllocator());
+   ~~~~~~~~~~
+   
+   Second way is to deep-clone the value from the address document:
+   ~~~~~~~~~~cpp
+   Value addressValue = Value(address["address"], person.GetAllocator());
+   person["person"].AddMember("address", addressValue, person.GetAllocator());
+   ~~~~~~~~~~
+
 ## Document/Value (DOM)
 
 1. What is move semantics? Why?
@@ -198,7 +256,7 @@
 
 3. What is SIMD? How it is applied in RapidJSON?
 
-   [SIMD](http://en.wikipedia.org/wiki/SIMD) instructions can perform parallel computation in modern CPUs. RapidJSON support Intel's SSE2/SSE4.2 to accelerate whitespace skipping. This improves performance of parsing indent formatted JSON. Define `RAPIDJSON_SSE2` or `RAPIDJSON_SSE42` macro to enable this feature. However, running the executable on a machine without such instruction set support will make it crash.
+   [SIMD](http://en.wikipedia.org/wiki/SIMD) instructions can perform parallel computation in modern CPUs. RapidJSON support Intel's SSE2/SSE4.2 and ARM's Neon to accelerate whitespace/tabspace/carriage-return/line-feed skipping. This improves performance of parsing indent formatted JSON. Define `RAPIDJSON_SSE2`, `RAPIDJSON_SSE42` or `RAPIDJSON_NEON` macro to enable this feature. However, running the executable on a machine without such instruction set support will make it crash.
 
 4. Does it consume a lot of memory?
 
